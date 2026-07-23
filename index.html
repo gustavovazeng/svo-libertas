@@ -2238,7 +2238,7 @@ function renderAnuncios(){
       const selRows=[...adRows].filter(r=>S.selectedAds.has(r.advCode)).sort((a,b)=>b.qtd-a.qtd);
       const hdr=`*Melhores ads - Sua Vida Em Ordem*\n_${fDM(start)} a ${fDM(end)}_`;
       const blocks=selRows.map(r=>{
-        const lines=["Nome do ad  ⤵️",r.advCode];
+        const lines=["Nome do ad  ⤵️",r.adName||r.advCode];
         if(r.igUrl) lines.push(r.igUrl);
         lines.push("Investimento:\t"+fD(r.spend));
         lines.push("Vendas:\t"+r.qtd);
