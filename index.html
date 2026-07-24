@@ -730,7 +730,7 @@ async function loadData(force=false){
       const campStatusR=r["Campaign status"]||"";
       const adsetStatusR=r["Adset status"]||"";
       const pubPlatform=(r["Publisher Platform"]||"").toLowerCase().trim();
-      const advCode=extractAdvCode(adName);
+      const advCode=(adName||"").trim(); // agrupa por nome EXATO do anúncio (sem extrair código curto)
       if(advCode){
         if(!mByAd[advCode])mByAd[advCode]={advCode,adName:adName,adIds:new Set(),spend:0,clicks:0,impressions:0,ic:0,video3s:0,video15s:0,igUrl:"",dates:new Set()};
         if(adId) mByAd[advCode].adIds.add(adId);
