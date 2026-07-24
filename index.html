@@ -886,16 +886,32 @@ async function loadData(force=false){
 }
 
 // ── Derived — Principal ────────────────────────────────────────────────────
+// Planejamento de vendas e investimento do tráfego (usado nos gráficos da Principal)
+const VENDAS_PLANEJADAS = {
+  "2026-07-22":20,  "2026-07-23":23,  "2026-07-24":28,  "2026-07-25":34,  "2026-07-26":40,
+  "2026-07-27":49,  "2026-07-28":58,  "2026-07-29":70,  "2026-07-30":84,  "2026-07-31":101,
+  "2026-08-01":121, "2026-08-02":145, "2026-08-03":145, "2026-08-04":145, "2026-08-05":145,
+  "2026-08-06":145, "2026-08-07":149,
+};
+const INVESTIMENTO_PLANEJADO = {
+  "2026-07-22":1300,  "2026-07-23":1560,  "2026-07-24":1872,  "2026-07-25":2246,  "2026-07-26":2696,
+  "2026-07-27":3235,  "2026-07-28":3882,  "2026-07-29":4658,  "2026-07-30":5590,  "2026-07-31":6708,
+  "2026-08-01":8049,  "2026-08-02":9659,  "2026-08-03":9659,  "2026-08-04":9659,  "2026-08-05":9659,
+  "2026-08-06":9659,  "2026-08-07":9909,
+};
+
 function getDaily(start,end){
   const d=D();
-  const all=new Set([...Object.keys(d.meta),...Object.keys(d.vendas),...Object.keys(d.vendasOrganico||{})]);
+  const all=new Set([...Object.keys(d.meta),...Object.keys(d.vendas),...Object.keys(d.vendasOrganico||{}),...Object.keys(VENDAS_PLANEJADAS),...Object.keys(INVESTIMENTO_PLANEJADO)]);
   return Array.from(all).sort().filter(dt=>dt>=start&&dt<=end).map(date=>{
     const m=d.meta[date]||{spend:0,clicks:0,impressions:0,landingViews:0,checkouts:0};
     const v=d.vendas[date]||{qtd:0,valor:0,taxa:0};
     const vo=(d.vendasOrganico||{})[date]||{qtd:0,valor:0,taxa:0};
     const lucro=v.valor-v.taxa-(m.spend*TAXA_IMPOSTO);
     return{date,label:fDate(date),spend:m.spend,faturamento:v.valor,vendas:v.qtd,
+      spendPlanejado: date in INVESTIMENTO_PLANEJADO ? INVESTIMENTO_PLANEJADO[date] : null,
       vendasOrganico:vo.qtd,faturamentoOrganico:vo.valor,
+      vendasPlanejadas: date in VENDAS_PLANEJADAS ? VENDAS_PLANEJADAS[date] : null,
       roas:m.spend>0?v.valor/m.spend:0,cpv:v.qtd>0?m.spend/v.qtd:0,
       ticket:v.qtd>0?v.valor/v.qtd:0,lucro};
   });
@@ -1152,14 +1168,16 @@ function drawChartWithOverlay(id, data, key, fmtY, refVal, refLabel, overlayInv,
   data.forEach((d,i)=>{if(i%step===0)ctx.fillText(d.label,xP(i),P.t+cH+18);});
 }
 
-// Gráfico dual-axis (investimento x CPV)
+// Gráfico dual-axis (investimento x CPV) — linha tracejada opcional de investimento planejado
 function drawDual(id,data,cssW,cssH){
   const ctx=initCanvas(id,cssW,cssH);if(!ctx)return;
   const P={t:14,r:52,b:28,l:58};
   const cW=cssW-P.l-P.r,cH=cssH-P.t-P.b;
   const lVals=data.map(d=>d.spend||0);
   const rVals=data.map(d=>d.cpv||0);
-  const lMax=Math.max(...lVals,0.01)*1.15;
+  const planVals=data.map(d=>d.spendPlanejado);
+  const planNums=planVals.filter(v=>v!=null);
+  const lMax=Math.max(...lVals,...planNums,0.01)*1.15;
   const rMax=Math.max(...rVals,META_CPV,0.01)*1.4;
   const xP=i=>P.l+(data.length>1?i/(data.length-1):0.5)*cW;
   const yPL=v=>P.t+cH-((v-0)/(lMax-0))*cH;
@@ -1171,16 +1189,28 @@ function drawDual(id,data,cssW,cssH){
     ctx.beginPath();ctx.moveTo(P.l,y);ctx.lineTo(P.l+cW,y);ctx.stroke();
     ctx.fillStyle=TICK_C;ctx.font="10px 'DM Mono',monospace";
     ctx.textAlign="right";ctx.fillText(fBRLShort(lMax-(i/4)*lMax),P.l-5,y+3.5);
-    ctx.textAlign="left";ctx.fillText("MX$"+(rMax-(i/4)*rMax).toFixed(0),P.l+cW+5,y+3.5);
+    ctx.textAlign="left";ctx.fillText("R$"+(rMax-(i/4)*rMax).toFixed(0),P.l+cW+5,y+3.5);
   }
   const mY=yPR(META_CPV);
   ctx.strokeStyle=CHART_CPV+"55";ctx.lineWidth=1;ctx.setLineDash([4,3]);
   ctx.beginPath();ctx.moveTo(P.l,mY);ctx.lineTo(P.l+cW,mY);ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle=CHART_CPV;ctx.font="9px 'Inter',sans-serif";ctx.textAlign="left";
-  ctx.fillText("Meta $"+META_CPV,P.l+cW+4,mY-3);
+  ctx.fillText("Meta R$"+META_CPV,P.l+cW+4,mY-3);
   drawLineArea(ctx,xP,yPL,lVals,CHART_INV,true);
   drawLineArea(ctx,xP,yPR,rVals,CHART_CPV,false);
+  // Linha tracejada — investimento planejado (mesma escala do investimento real, eixo esquerdo)
+  if(planNums.length){
+    const pts=[];
+    data.forEach((d,i)=>{ if(d.spendPlanejado!=null) pts.push([xP(i),yPL(d.spendPlanejado)]); });
+    ctx.beginPath();
+    ctx.strokeStyle="#fbbf24";ctx.lineWidth=2;ctx.setLineDash([5,4]);
+    pts.forEach(([x,y],i)=>{ i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle="#fbbf24";
+    pts.forEach(([x,y])=>{ ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fill(); });
+  }
   const step=data.length>60?7:data.length>30?3:data.length>14?2:1;
   ctx.fillStyle=TICK_C;ctx.font="10px 'DM Mono',monospace";ctx.textAlign="center";ctx.setLineDash([]);
   data.forEach((d,i)=>{if(i%step===0)ctx.fillText(d.label,xP(i),P.t+cH+18);});
@@ -1244,14 +1274,16 @@ function statusLegend(){
   </div>`;
 }
 
-// Gráfico de barras — vendas por dia
-function drawBarVendas(id, data, cssW, cssH, key="vendas", color="#34d399"){
+// Gráfico de barras — vendas por dia (planKey opcional: sobrepõe linha tracejada de planejamento)
+function drawBarVendas(id, data, cssW, cssH, key="vendas", color="#34d399", planKey=null, planColor="#fbbf24"){
   const ctx=initCanvas(id,cssW,cssH);if(!ctx)return;
   const P={t:22,r:16,b:26,l:32};
   const cW=cssW-P.l-P.r, cH=cssH-P.t-P.b;
   const n=data.length; if(n===0)return;
   const vals=data.map(d=>d[key]||0);
-  const maxV=Math.max(...vals,1);
+  const planVals=planKey?data.map(d=>d[planKey]):null;
+  const planNums=planVals?planVals.filter(v=>v!=null):[];
+  const maxV=Math.max(...vals,...planNums,1);
 
   // Grid horizontal
   const ticks=4;
@@ -1293,6 +1325,27 @@ function drawBarVendas(id, data, cssW, cssH, key="vendas", color="#34d399"){
       ctx.font=`bold ${Math.max(8,Math.min(11,barW-1))}px 'DM Sans',sans-serif`;
       ctx.textAlign="center";
       ctx.fillText(v,cx,y-4);
+    }
+  }
+
+  // Linha tracejada — planejado (sobreposta às barras, para comparar planejado × realizado)
+  if(planKey){
+    const pts=[];
+    for(let i=0;i<n;i++){
+      const v=planVals[i];
+      if(v==null) continue;
+      const cx=P.l+slot*i+slot/2;
+      const y=P.t+cH-(v/maxV)*cH;
+      pts.push([cx,y,v]);
+    }
+    if(pts.length){
+      ctx.beginPath();
+      ctx.strokeStyle=planColor;ctx.lineWidth=2;ctx.setLineDash([5,4]);
+      pts.forEach(([x,y],i)=>{ i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle=planColor;
+      pts.forEach(([x,y])=>{ ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fill(); });
     }
   }
 
@@ -1410,6 +1463,7 @@ function renderPrincipal(){
         <div class="lg">
           <span class="li"><span class="ll" style="background:${CHART_INV}"></span>Invest. (esq.)</span>
           <span class="li"><span class="ll" style="background:${CHART_CPV}"></span>CPV (dir.)</span>
+          <span class="li"><span class="ld" style="background:#fbbf24;border-radius:0;height:2px"></span>Planejado</span>
         </div>
       </div>
       <div style="position:relative"><canvas id="c-dual"></canvas><div class="tip" id="t-dual"></div></div>
@@ -1417,7 +1471,10 @@ function renderPrincipal(){
     <div class="cc" style="margin-bottom:12px">
       <div class="ch">
         <span class="ct">Vendas do tráfego (dia a dia)</span>
-        <div class="lg"><span class="li"><span class="ld" style="background:#34d399"></span>Vendas/dia</span></div>
+        <div class="lg">
+          <span class="li"><span class="ld" style="background:#34d399"></span>Vendas/dia</span>
+          <span class="li"><span class="ld" style="background:#fbbf24;border-radius:0;height:2px"></span>Planejado</span>
+        </div>
       </div>
       <canvas id="c-bar-vendas"></canvas>
     </div>
@@ -1435,11 +1492,12 @@ function renderPrincipal(){
     const bW=document.getElementById("c-bar-vendas")?.parentElement?.offsetWidth||720;
     const bW2=document.getElementById("c-bar-vendas-organico")?.parentElement?.offsetWidth||720;
     drawDual("c-dual",daily,mW,230);
-    drawBarVendas("c-bar-vendas",daily,bW,160,"vendas","#34d399");
+    drawBarVendas("c-bar-vendas",daily,bW,160,"vendas","#34d399","vendasPlanejadas","#fbbf24");
     drawBarVendas("c-bar-vendas-organico",daily,bW2,160,"vendasOrganico","#a78bfa");
     setupTip("c-dual","t-dual",daily,[
       {key:"spend",color:CHART_INV,name:"Investimento"},
       {key:"cpv",color:CHART_CPV,name:"CPV"},
+      {key:"spendPlanejado",color:"#fbbf24",name:"Investimento planejado",fmt:v=>v?fBRL(v):"—"},
     ]);
   });
 }
