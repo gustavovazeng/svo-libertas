@@ -723,7 +723,7 @@ async function loadData(force=false){
       const spendV=parseBRL(r["Spend (Cost, Amount Spent)"]);
       const clicksV=parseInt(r["Action Link Clicks"]||0)||0;
       const impressV=parseInt(r["Impressions"]||0)||0;
-      const icV      =parseInt(r["Action Omni Initiated Checkout"]||0)||0;
+      const icV      =parseInt(r["Action Omni Initiated Checkout"]||r["Action FB Pixel Initiate Checkout (Offsite Conversion)"]||0)||0;
       const video3sV =parseInt(r["Action Video View"]||0)||0;
       const video15sV=parseInt(r["Video 15 Sec Watched Actions"]||0)||0;
       const adStatusR  =r["Ad status"]||"";
@@ -2884,6 +2884,8 @@ function renderPlanejamento(){
   const totVndPlan=daily.reduce((a,d)=>a+(d.vendasPlanejadas||0),0);
   const totVndReal=daily.reduce((a,d)=>a+d.vendas,0);
   const hoje=todayISO();
+  const totInvPlanAteHoje=daily.reduce((a,d)=>a+(d.date<=hoje?(d.spendPlanejado||0):0),0);
+  const totVndPlanAteHoje=daily.reduce((a,d)=>a+(d.date<=hoje?(d.vendasPlanejadas||0):0),0);
 
   const rows=daily.map(d=>{
     const isFuture=d.date>hoje;
@@ -2911,6 +2913,10 @@ function renderPlanejamento(){
       <div class="kc" style="border-color:${statusBorder(totInvReal,totInvPlan,true)}"><div class="kc-lbl">Investimento realizado</div><div class="kc-val kc-val-sm" style="color:${statusColor(totInvReal,totInvPlan,true)}">${fBRL(totInvReal)}</div></div>
       <div class="kc"><div class="kc-lbl">Vendas planejadas</div><div class="kc-val kc-val-sm">${totVndPlan}</div></div>
       <div class="kc" style="border-color:${statusBorder(totVndReal,totVndPlan,true)}"><div class="kc-lbl">Vendas realizadas</div><div class="kc-val kc-val-sm" style="color:${statusColor(totVndReal,totVndPlan,true)}">${totVndReal}</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:13px;margin-bottom:20px">
+      <div class="kc"><div class="kc-lbl">Investimento planejado até hoje</div><div class="kc-val kc-val-sm">${fBRL(totInvPlanAteHoje)}</div></div>
+      <div class="kc"><div class="kc-lbl">Vendas planejadas até hoje</div><div class="kc-val kc-val-sm">${totVndPlanAteHoje}</div></div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:20px">
       <table style="width:100%;border-collapse:collapse;font-size:12px">
