@@ -294,6 +294,7 @@ input[type=date]::-webkit-calendar-picker-indicator{opacity:.4;cursor:pointer;fi
   <div id="page-trafego"         class="page"></div>
   <div id="page-anuncios"        class="page"></div>
   <div id="page-resumo"          class="page"></div>
+  <div id="page-planejamento"    class="page"></div>
 </div>
 
 <script>
@@ -412,7 +413,7 @@ function renderHeader(){
   if(fn) fn.textContent=FUNIL_LABEL;
   const fs=document.getElementById("funil-status"); if(fs) fs.textContent="ativo";
   // Navigation tabs
-  const tabs=[{id:"principal",icon:"⊞",label:"Principal"},{id:"trafego",icon:"⟳",label:"Métricas tráfego"},{id:"funil",icon:"▽",label:"Métricas do funil"},{id:"anuncios",icon:"◈",label:"Anúncios"},{id:"resumo",icon:"📋",label:"Resumo diário"}];
+  const tabs=[{id:"principal",icon:"⊞",label:"Principal"},{id:"trafego",icon:"⟳",label:"Métricas tráfego"},{id:"funil",icon:"▽",label:"Métricas do funil"},{id:"anuncios",icon:"◈",label:"Anúncios"},{id:"resumo",icon:"📋",label:"Resumo diário"},{id:"planejamento",icon:"🗓",label:"Planejamento"}];
   const tabsEl=document.getElementById("hdr-tabs");
   if(tabsEl) tabsEl.innerHTML=tabs.map(t=>`<button class="htab${p===t.id?" htab-active":""}" onclick="navTo('${t.id}')"><span class="htab-icon">${t.icon}</span>${t.label}</button>`).join("");
   // Sync preset buttons active state
@@ -2872,6 +2873,69 @@ function copyResumo(){
   }).catch(()=>{ alert("Não foi possível copiar. Selecione o texto manualmente."); });
 }
 
+// ── Render Planejamento ────────────────────────────────────────────────────
+function renderPlanejamento(){
+  const el=document.getElementById("page-planejamento");if(!el)return;
+  const _dd=D();
+  const daily=getDaily("2000-01-01","2099-12-31").filter(d=>d.spendPlanejado!=null||d.vendasPlanejadas!=null);
+
+  const totInvPlan=daily.reduce((a,d)=>a+(d.spendPlanejado||0),0);
+  const totInvReal=daily.reduce((a,d)=>a+d.spend,0);
+  const totVndPlan=daily.reduce((a,d)=>a+(d.vendasPlanejadas||0),0);
+  const totVndReal=daily.reduce((a,d)=>a+d.vendas,0);
+  const hoje=todayISO();
+
+  const rows=daily.map(d=>{
+    const isFuture=d.date>hoje;
+    const invRealC=(!isFuture&&d.spendPlanejado)?statusColor(d.spend,d.spendPlanejado,true):"var(--text)";
+    const vndRealC=(!isFuture&&d.vendasPlanejadas)?statusColor(d.vendas,d.vendasPlanejadas,true):"var(--text)";
+    return `<tr style="border-top:1px solid var(--border)${d.date===hoje?";background:rgba(96,165,250,.06)":""}">
+      <td style="padding:8px 14px;color:var(--text-strong);font-weight:600;font-family:'JetBrains Mono',monospace">${fDateBR(d.date)}${d.date===hoje?" 👈":""}</td>
+      <td style="padding:8px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--text)">${d.spendPlanejado!=null?fBRL(d.spendPlanejado):"—"}</td>
+      <td style="padding:8px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:${invRealC}">${isFuture&&d.spend===0?"—":fBRL(d.spend)}</td>
+      <td style="padding:8px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--text)">${d.vendasPlanejadas!=null?d.vendasPlanejadas:"—"}</td>
+      <td style="padding:8px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:${vndRealC}">${isFuture&&d.vendas===0?"—":d.vendas}</td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML=`
+    <div class="hdr">
+      <div>
+        <div class="hdr-title">Planejamento</div>
+        <div class="hdr-sub">${daily.length} dias · campanha de tráfego · atualizado em: ${_dd.updated||"—"}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px">${statusLegend()}</div>
+    </div>
+    <div class="g4" style="margin-bottom:20px">
+      <div class="kc"><div class="kc-lbl">Investimento planejado</div><div class="kc-val kc-val-sm">${fBRL(totInvPlan)}</div></div>
+      <div class="kc" style="border-color:${statusBorder(totInvReal,totInvPlan,true)}"><div class="kc-lbl">Investimento realizado</div><div class="kc-val kc-val-sm" style="color:${statusColor(totInvReal,totInvPlan,true)}">${fBRL(totInvReal)}</div></div>
+      <div class="kc"><div class="kc-lbl">Vendas planejadas</div><div class="kc-val kc-val-sm">${totVndPlan}</div></div>
+      <div class="kc" style="border-color:${statusBorder(totVndReal,totVndPlan,true)}"><div class="kc-lbl">Vendas realizadas</div><div class="kc-val kc-val-sm" style="color:${statusColor(totVndReal,totVndPlan,true)}">${totVndReal}</div></div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:20px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="color:var(--hint);font-size:10px;text-transform:uppercase;letter-spacing:.08em">
+          <th style="text-align:left;padding:9px 14px;font-weight:700">Data</th>
+          <th style="text-align:right;padding:9px 14px;font-weight:700">Investimento planejado</th>
+          <th style="text-align:right;padding:9px 14px;font-weight:700">Investimento realizado</th>
+          <th style="text-align:right;padding:9px 14px;font-weight:700">Vendas planejadas</th>
+          <th style="text-align:right;padding:9px 14px;font-weight:700">Vendas realizadas</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr style="border-top:2px solid var(--border-h,var(--border));font-weight:700">
+            <td style="padding:10px 14px;color:var(--text-strong)">Total</td>
+            <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--text-strong)">${fBRL(totInvPlan)}</td>
+            <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:${statusColor(totInvReal,totInvPlan,true)}">${fBRL(totInvReal)}</td>
+            <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--text-strong)">${totVndPlan}</td>
+            <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:${statusColor(totVndReal,totVndPlan,true)}">${totVndReal}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <p class="foot">Planejamento da campanha (tráfego) · Base Meta + Base Vendas</p>`;
+}
+
 // ── Render ─────────────────────────────────────────────────────────────────
 
 function render(){
@@ -2898,6 +2962,7 @@ function render(){
   else if(S.currentPage==="anuncios") renderAnuncios();
   else if(S.currentPage==="funil") renderFunil();
   else if(S.currentPage==="resumo") renderResumo();
+  else if(S.currentPage==="planejamento") renderPlanejamento();
 
 }
 
