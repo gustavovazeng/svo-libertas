@@ -366,6 +366,9 @@ const S = {
   overlays:{cpc:{inv:false,cpv:false},ctr:{inv:false,cpv:false},cpm:{inv:false,cpv:false},
     txPagChk:{inv:false,cpv:false},txChkVnd:{inv:false,cpv:false},connect:{inv:false,cpv:false}},
   currentPage:"principal",
+  // Principal — filtro de temperatura + overlay de investimento planejado
+  currentTemp:"consolidado",
+  showPlanInv:false,
 };
 
 // ── Header period helpers ──────────────────────────────────────────────────
@@ -530,6 +533,16 @@ function extractCountryFromAdset(adsetName){
     return slug.replace(/\b\w/g,c=>c.toUpperCase());
   }
   return "Brasil";
+}
+
+// Extrai a temperatura do público a partir do nome da campanha.
+// Convenção observada nas campanhas SVO: "svo-vendas-advtg-frio-21jul", "svo-vendas-quente-21jul"...
+function campTemperature(campName){
+  const n=(campName||"").toLowerCase();
+  if(/frio/.test(n))   return "frio";
+  if(/morno/.test(n))  return "morno";
+  if(/quente/.test(n)) return "quente";
+  return null;
 }
 
 // Extrai Ad ID numérico de 15-20 dígitos de uma string que pode ser:
@@ -901,19 +914,47 @@ const INVESTIMENTO_PLANEJADO = {
   "2026-08-06":9659,  "2026-08-07":9909,
 };
 
-function getDaily(start,end){
+// Agrega investimento (por adId, via metaByAdId) e vendas (por adId, via vendasByAdDate)
+// filtrando somente os ads cuja campanha tem a temperatura informada.
+// Vendas orgânicas não têm campanha/anúncio associado, então não entram em nenhuma temperatura.
+function getSpendVendasByTemp(temp){
   const d=D();
-  const all=new Set([...Object.keys(d.meta),...Object.keys(d.vendas),...Object.keys(d.vendasOrganico||{}),...Object.keys(VENDAS_PLANEJADAS),...Object.keys(INVESTIMENTO_PLANEJADO)]);
+  const spendByDate={}, vendasByDate={};
+  for(const adId in (d.metaByAdId||{})){
+    const ad=d.metaByAdId[adId];
+    if(campTemperature(ad.campName)!==temp) continue;
+    for(const date in (ad.byDate||{})){
+      spendByDate[date]=(spendByDate[date]||0)+(ad.byDate[date].spend||0);
+    }
+    const vByD=d.vendasByAdDate[adId]||{};
+    for(const date in vByD){
+      if(!vendasByDate[date]) vendasByDate[date]={qtd:0,valor:0,taxa:0};
+      vendasByDate[date].qtd  +=vByD[date].qtd  ||0;
+      vendasByDate[date].valor+=vByD[date].valor||0;
+      vendasByDate[date].taxa +=vByD[date].taxa ||0;
+    }
+  }
+  return {spendByDate, vendasByDate};
+}
+
+function getDaily(start,end,temp=null){
+  const d=D();
+  const isTemp=temp&&temp!=="consolidado";
+  const tempData=isTemp?getSpendVendasByTemp(temp):null;
+  const spendSrc=isTemp?tempData.spendByDate:Object.fromEntries(Object.entries(d.meta).map(([k,v])=>[k,v.spend]));
+  const vendasSrc=isTemp?tempData.vendasByDate:d.vendas;
+  const all=new Set([...Object.keys(spendSrc),...Object.keys(vendasSrc),...Object.keys(d.vendasOrganico||{}),...Object.keys(VENDAS_PLANEJADAS),...Object.keys(INVESTIMENTO_PLANEJADO)]);
   return Array.from(all).sort().filter(dt=>dt>=start&&dt<=end).map(date=>{
-    const m=d.meta[date]||{spend:0,clicks:0,impressions:0,landingViews:0,checkouts:0};
-    const v=d.vendas[date]||{qtd:0,valor:0,taxa:0};
-    const vo=(d.vendasOrganico||{})[date]||{qtd:0,valor:0,taxa:0};
-    const lucro=v.valor-v.taxa-(m.spend*TAXA_IMPOSTO);
-    return{date,label:fDate(date),spend:m.spend,faturamento:v.valor,vendas:v.qtd,
+    const spend=spendSrc[date]||0;
+    const v=vendasSrc[date]||{qtd:0,valor:0,taxa:0};
+    // Orgânico não pertence a nenhuma temperatura específica — só aparece na visão consolidada.
+    const vo=isTemp?{qtd:0,valor:0,taxa:0}:((d.vendasOrganico||{})[date]||{qtd:0,valor:0,taxa:0});
+    const lucro=v.valor-v.taxa-(spend*TAXA_IMPOSTO);
+    return{date,label:fDate(date),spend,faturamento:v.valor,vendas:v.qtd,
       spendPlanejado: date in INVESTIMENTO_PLANEJADO ? INVESTIMENTO_PLANEJADO[date] : null,
       vendasOrganico:vo.qtd,faturamentoOrganico:vo.valor,
       vendasPlanejadas: date in VENDAS_PLANEJADAS ? VENDAS_PLANEJADAS[date] : null,
-      roas:m.spend>0?v.valor/m.spend:0,cpv:v.qtd>0?m.spend/v.qtd:0,
+      roas:spend>0?v.valor/spend:0,cpv:v.qtd>0?spend/v.qtd:0,
       ticket:v.qtd>0?v.valor/v.qtd:0,lucro};
   });
 }
@@ -1170,13 +1211,13 @@ function drawChartWithOverlay(id, data, key, fmtY, refVal, refLabel, overlayInv,
 }
 
 // Gráfico dual-axis (investimento x CPV) — linha tracejada opcional de investimento planejado
-function drawDual(id,data,cssW,cssH){
+function drawDual(id,data,cssW,cssH,showPlan=false){
   const ctx=initCanvas(id,cssW,cssH);if(!ctx)return;
   const P={t:14,r:52,b:28,l:58};
   const cW=cssW-P.l-P.r,cH=cssH-P.t-P.b;
   const lVals=data.map(d=>d.spend||0);
   const rVals=data.map(d=>d.cpv||0);
-  const planVals=data.map(d=>d.spendPlanejado);
+  const planVals=showPlan?data.map(d=>d.spendPlanejado):[];
   const planNums=planVals.filter(v=>v!=null);
   const lMax=Math.max(...lVals,...planNums,0.01)*1.15;
   const rMax=Math.max(...rVals,META_CPV,0.01)*1.4;
@@ -1436,27 +1477,61 @@ function drawDistBar(id, data, key, color, fmtFn, cssW, cssH){
 }
 
 // ── Render Principal ───────────────────────────────────────────────────────
+const TEMP_LABELS={consolidado:"Consolidado",frio:"Frio",morno:"Morno",quente:"Quente"};
+function setTempFilter(t){ S.currentTemp=t; renderPrincipal(); }
+function togglePlanInv(){ S.showPlanInv=!S.showPlanInv; renderPrincipal(); }
+
 function renderPrincipal(){
   const el=document.getElementById("page-principal");if(!el)return;
-  const daily=getDaily(S.startDate,S.endDate);
+  const isTemp=S.currentTemp!=="consolidado";
+  const daily=getDaily(S.startDate,S.endDate,S.currentTemp);
   const tot=getTotals(daily);
   const roasC=statusColor(tot.roas,META_ROAS,true);
   const cpvC=statusColor(tot.cpv,META_CPV,false);
+
+  // Distribuição de investimento por temperatura — sempre consolidada, independente do filtro ativo
+  const spendAll=getDaily(S.startDate,S.endDate).reduce((a,d)=>a+d.spend,0);
+  const spendFrio=getDaily(S.startDate,S.endDate,"frio").reduce((a,d)=>a+d.spend,0);
+  const spendMorno=getDaily(S.startDate,S.endDate,"morno").reduce((a,d)=>a+d.spend,0);
+  const spendQuente=getDaily(S.startDate,S.endDate,"quente").reduce((a,d)=>a+d.spend,0);
+  const pctFrio=spendAll>0?(spendFrio/spendAll)*100:0;
+  const pctMorno=spendAll>0?(spendMorno/spendAll)*100:0;
+  const pctQuente=spendAll>0?(spendQuente/spendAll)*100:0;
+
+  function tempBtn(id){
+    const active=S.currentTemp===id;
+    return `<button class="btn-pre${active?" on":""}" onclick="setTempFilter('${id}')">${TEMP_LABELS[id]}</button>`;
+  }
+  function planInvBtn(){
+    const on=S.showPlanInv;
+    return `<button class="btn-overlay${on?" on":""}"
+      style="${on?`border-color:#fbbf24;color:#fbbf24;background:#fbbf2418`:""}"
+      onclick="togglePlanInv()">+ Planejado</button>`;
+  }
 
   el.innerHTML=`
     <div class="hdr" style="margin-bottom:6px">
       <div>
         <div class="hdr-title">${PRODUTO_SVO}</div>
-        <div class="hdr-sub">atualizado em: ${D().updated||"—"}${daily.length>0?` · ${daily.length} dias`:""}</div>
+        <div class="hdr-sub">atualizado em: ${D().updated||"—"}${daily.length>0?` · ${daily.length} dias`:""}${isTemp?` · temperatura: ${TEMP_LABELS[S.currentTemp]}`:""}</div>
       </div>
       <div style="display:flex;align-items:center;gap:16px">${statusLegend()}</div>
     </div>
     ${S.error?`<div class="err">⚠️ ${S.error}</div>`:""}
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:16px">
+    <div class="presets" style="margin-bottom:16px">
+      ${["consolidado","frio","morno","quente"].map(tempBtn).join("")}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:13px">
       ${kpiCard("Investimento",fBRL(tot.spend),`${tot.vendas} vendas · ${daily.length} dias`,"var(--text-strong)")}
       ${kpiCard("ROAS",tot.roas.toFixed(2)+"x",`meta ${META_ROAS.toFixed(2)}x`,roasC,false,tot.roas,true)}
       ${kpiCard("Faturamento",fBRL(tot.faturamento),PRODUTO_SVO,"var(--text-strong)")}
       ${kpiCard("Custo por Venda",fBRL(tot.cpv),`meta ${fBRL(META_CPV)}`,cpvC,false,tot.cpv,false)}
+    </div>
+    <div class="section-lbl" style="margin-bottom:8px">Distribuição de investimento por temperatura</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:16px">
+      ${kpiCard("% Investimento Frio",fPct(pctFrio),fBRL(spendFrio),"var(--text-strong)",true)}
+      ${kpiCard("% Investimento Morno",fPct(pctMorno),fBRL(spendMorno),"var(--text-strong)",true)}
+      ${kpiCard("% Investimento Quente",fPct(pctQuente),fBRL(spendQuente),"var(--text-strong)",true)}
     </div>
     <div class="cc" style="margin-bottom:12px;position:relative">
       <div class="ch">
@@ -1464,7 +1539,8 @@ function renderPrincipal(){
         <div class="lg">
           <span class="li"><span class="ll" style="background:${CHART_INV}"></span>Invest. (esq.)</span>
           <span class="li"><span class="ll" style="background:${CHART_CPV}"></span>CPV (dir.)</span>
-          <span class="li"><span class="ld" style="background:#fbbf24;border-radius:0;height:2px"></span>Planejado</span>
+          ${S.showPlanInv?`<span class="li"><span class="ld" style="background:#fbbf24;border-radius:0;height:2px"></span>Planejado</span>`:""}
+          <div class="overlay-btns">${planInvBtn()}</div>
         </div>
       </div>
       <div style="position:relative"><canvas id="c-dual"></canvas><div class="tip" id="t-dual"></div></div>
@@ -1481,7 +1557,7 @@ function renderPrincipal(){
     </div>
     <div class="cc" style="margin-bottom:12px">
       <div class="ch">
-        <span class="ct">Vendas do orgânico (dia a dia)</span>
+        <span class="ct">Vendas do orgânico (dia a dia)${isTemp?` <span style="color:var(--hint);font-size:10px;font-weight:400">(orgânico não tem temperatura — só na visão consolidada)</span>`:""}</span>
         <div class="lg"><span class="li"><span class="ld" style="background:#a78bfa"></span>Vendas/dia</span></div>
       </div>
       <canvas id="c-bar-vendas-organico"></canvas>
@@ -1492,14 +1568,15 @@ function renderPrincipal(){
     const mW=document.getElementById("c-dual")?.parentElement?.offsetWidth||720;
     const bW=document.getElementById("c-bar-vendas")?.parentElement?.offsetWidth||720;
     const bW2=document.getElementById("c-bar-vendas-organico")?.parentElement?.offsetWidth||720;
-    drawDual("c-dual",daily,mW,230);
+    drawDual("c-dual",daily,mW,230,S.showPlanInv);
     drawBarVendas("c-bar-vendas",daily,bW,160,"vendas","#34d399","vendasPlanejadas","#fbbf24");
     drawBarVendas("c-bar-vendas-organico",daily,bW2,160,"vendasOrganico","#a78bfa");
-    setupTip("c-dual","t-dual",daily,[
+    const tipLines=[
       {key:"spend",color:CHART_INV,name:"Investimento"},
       {key:"cpv",color:CHART_CPV,name:"CPV"},
-      {key:"spendPlanejado",color:"#fbbf24",name:"Investimento planejado",fmt:v=>v?fBRL(v):"—"},
-    ]);
+    ];
+    if(S.showPlanInv) tipLines.push({key:"spendPlanejado",color:"#fbbf24",name:"Investimento planejado",fmt:v=>v?fBRL(v):"—"});
+    setupTip("c-dual","t-dual",daily,tipLines);
   });
 }
 
