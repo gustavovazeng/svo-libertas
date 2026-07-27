@@ -716,8 +716,11 @@ async function loadData(force=false){
   S.loading=false; S.error=null;
 
   try{
+    for(const k in _tempCache) delete _tempCache[k]; // invalidar cache de agregados por temperatura a cada reload
+
     // ── Meta ──────────────────────────────────────────────────────────────
     const mD={}, mByAd={}, mByAdByDate={}, mByCamp={}, mByCampByDate={}, mByAdId={}, mByCountry={}, mByPlatform={};
+    const mByPlatformByTemp={frio:{},morno:{},quente:{}};
     for(const r of parseSheet(mj)){
       const d=toISO(r["Date"]);if(!d)continue;
       if(!mD[d])mD[d]={spend:0,clicks:0,impressions:0,landingViews:0,checkouts:0,purchases:0};
@@ -737,6 +740,7 @@ async function loadData(force=false){
       const clicksV=parseInt(r["Action Link Clicks"]||0)||0;
       const impressV=parseInt(r["Impressions"]||0)||0;
       const icV      =parseInt(r["Action Omni Initiated Checkout"]||r["Action FB Pixel Initiate Checkout (Offsite Conversion)"]||0)||0;
+      const landingViewsV=parseInt(r["Action Landing Page View"]||0)||0;
       const video3sV =parseInt(r["Action Video View"]||0)||0;
       const video15sV=parseInt(r["Video 15 Sec Watched Actions"]||0)||0;
       const adStatusR  =r["Ad status"]||"";
@@ -770,10 +774,11 @@ async function loadData(force=false){
       // Índice por adId (granularidade máxima — permite filtrar por campanha/país depois)
       if(adId && advCode){
         if(!mByAdId[adId]) mByAdId[adId]={adId,advCode,campName,country,adStatus:"",campStatus:"",adsetStatus:"",lastStatusDate:"",byDate:{}};
-        if(!mByAdId[adId].byDate[d]) mByAdId[adId].byDate[d]={spend:0,clicks:0,impressions:0,ic:0,video3s:0,video15s:0,igUrl:""};
+        if(!mByAdId[adId].byDate[d]) mByAdId[adId].byDate[d]={spend:0,clicks:0,impressions:0,landingViews:0,ic:0,video3s:0,video15s:0,igUrl:""};
         mByAdId[adId].byDate[d].spend       += spendV;
         mByAdId[adId].byDate[d].clicks      += clicksV;
         mByAdId[adId].byDate[d].impressions += impressV;
+        mByAdId[adId].byDate[d].landingViews+= landingViewsV;
         mByAdId[adId].byDate[d].ic       += icV;
         mByAdId[adId].byDate[d].video3s  += video3sV;
         mByAdId[adId].byDate[d].video15s += video15sV;
@@ -796,6 +801,14 @@ async function loadData(force=false){
           mByPlatform[pubPlatform].spend      +=spendV;
           mByPlatform[pubPlatform].clicks     +=clicksV;
           mByPlatform[pubPlatform].impressions+=impressV;
+          const rowTemp=campTemperature(campName);
+          if(rowTemp&&mByPlatformByTemp[rowTemp]){
+            const mpt=mByPlatformByTemp[rowTemp];
+            if(!mpt[pubPlatform])mpt[pubPlatform]={platform:pubPlatform,spend:0,clicks:0,impressions:0};
+            mpt[pubPlatform].spend      +=spendV;
+            mpt[pubPlatform].clicks     +=clicksV;
+            mpt[pubPlatform].impressions+=impressV;
+          }
         }
       }
       // Agrupa por campanha
@@ -822,6 +835,7 @@ async function loadData(force=false){
     S.meta=mD; S.metaByAd=mByAd; S.metaByAdByDate=mByAdByDate;
     S.metaByCamp=mByCamp; S.metaByCampByDate=mByCampByDate;
     S.metaByAdId=mByAdId; S.metaByCountry=mByCountry; S.metaByPlatform=mByPlatform;
+    S.metaByPlatformByTemp=mByPlatformByTemp;
 
     // ── Vendas SVO ───────────────────────────────────────────────────────
     // Canal: UTM com FBAds (ou sem UTM) = tráfego; qualquer outra UTM = orgânico.
@@ -856,22 +870,35 @@ async function loadData(force=false){
       vDOrganico[d].qtd+=1; vDOrganico[d].valor+=valor;
     }
     const vByPlatform={}, vByPlacement={};
+    const vByPlatformByTemp={frio:{},morno:{},quente:{}};
+    const vByPlacementByTemp={frio:{},morno:{},quente:{}};
     for(const r of trafegoRows){
       if(r["Status da compra"]!=="Paga") continue;
       const d=r["Data da compra"]; if(!d||d<S.startDate||d>S.endDate) continue;
       const valor=parseFloat(r["Valor do produto"])||0;
       const plat=r.platform||"";
       const plac=r.placement||"";
+      const rAdId=r["Ad Id"];
+      const rTemp=rAdId?campTemperature(mByAdId[rAdId]?.campName):null;
       if(plat){
         if(!vByPlatform[plat])vByPlatform[plat]={qtd:0,valor:0};
         vByPlatform[plat].qtd+=1; vByPlatform[plat].valor+=valor;
+        if(rTemp&&vByPlatformByTemp[rTemp]){
+          if(!vByPlatformByTemp[rTemp][plat])vByPlatformByTemp[rTemp][plat]={qtd:0,valor:0};
+          vByPlatformByTemp[rTemp][plat].qtd+=1; vByPlatformByTemp[rTemp][plat].valor+=valor;
+        }
       }
       if(plac&&!plac.includes("{{"+"}")&&plac!=="Others"&&plac!=="unknown"){
         if(!vByPlacement[plac])vByPlacement[plac]={qtd:0,valor:0};
         vByPlacement[plac].qtd+=1; vByPlacement[plac].valor+=valor;
+        if(rTemp&&vByPlacementByTemp[rTemp]){
+          if(!vByPlacementByTemp[rTemp][plac])vByPlacementByTemp[rTemp][plac]={qtd:0,valor:0};
+          vByPlacementByTemp[rTemp][plac].qtd+=1; vByPlacementByTemp[rTemp][plac].valor+=valor;
+        }
       }
     }
     S.vendasByPlatform=vByPlatform; S.vendasByPlacement=vByPlacement;
+    S.vendasByPlatformByTemp=vByPlatformByTemp; S.vendasByPlacementByTemp=vByPlacementByTemp;
     S.vendas=vD; S.vendasByAd=vByAd; S.vendasByAdDate=vByAdDate;
     S.vendasOrganico=vDOrganico;
 
@@ -914,17 +941,26 @@ const INVESTIMENTO_PLANEJADO = {
   "2026-08-06":9659,  "2026-08-07":9909,
 };
 
-// Agrega investimento (por adId, via metaByAdId) e vendas (por adId, via vendasByAdDate)
-// filtrando somente os ads cuja campanha tem a temperatura informada.
-// Vendas orgânicas não têm campanha/anúncio associado, então não entram em nenhuma temperatura.
-function getSpendVendasByTemp(temp){
+// Agrega meta (spend/clicks/impressions/landingViews/checkouts, por adId via metaByAdId)
+// e vendas (por adId, via vendasByAdDate) filtrando somente os ads cuja campanha tem a
+// temperatura informada. Vendas orgânicas não têm campanha/anúncio associado, então não
+// entram em nenhuma temperatura.
+const _tempCache={};
+function getMetaVendasByTemp(temp){
+  if(_tempCache[temp]) return _tempCache[temp];
   const d=D();
-  const spendByDate={}, vendasByDate={};
+  const metaByDate={}, vendasByDate={};
   for(const adId in (d.metaByAdId||{})){
     const ad=d.metaByAdId[adId];
     if(campTemperature(ad.campName)!==temp) continue;
     for(const date in (ad.byDate||{})){
-      spendByDate[date]=(spendByDate[date]||0)+(ad.byDate[date].spend||0);
+      const b=ad.byDate[date];
+      if(!metaByDate[date]) metaByDate[date]={spend:0,clicks:0,impressions:0,landingViews:0,checkouts:0};
+      metaByDate[date].spend        +=b.spend||0;
+      metaByDate[date].clicks       +=b.clicks||0;
+      metaByDate[date].impressions  +=b.impressions||0;
+      metaByDate[date].landingViews +=b.landingViews||0;
+      metaByDate[date].checkouts    +=b.ic||0;
     }
     const vByD=d.vendasByAdDate[adId]||{};
     for(const date in vByD){
@@ -934,14 +970,14 @@ function getSpendVendasByTemp(temp){
       vendasByDate[date].taxa +=vByD[date].taxa ||0;
     }
   }
-  return {spendByDate, vendasByDate};
+  return (_tempCache[temp]={metaByDate, vendasByDate});
 }
 
 function getDaily(start,end,temp=null){
   const d=D();
   const isTemp=temp&&temp!=="consolidado";
-  const tempData=isTemp?getSpendVendasByTemp(temp):null;
-  const spendSrc=isTemp?tempData.spendByDate:Object.fromEntries(Object.entries(d.meta).map(([k,v])=>[k,v.spend]));
+  const tempData=isTemp?getMetaVendasByTemp(temp):null;
+  const spendSrc=isTemp?Object.fromEntries(Object.entries(tempData.metaByDate).map(([k,v])=>[k,v.spend])):Object.fromEntries(Object.entries(d.meta).map(([k,v])=>[k,v.spend]));
   const vendasSrc=isTemp?tempData.vendasByDate:d.vendas;
   const all=new Set([...Object.keys(spendSrc),...Object.keys(vendasSrc),...Object.keys(d.vendasOrganico||{}),...Object.keys(VENDAS_PLANEJADAS),...Object.keys(INVESTIMENTO_PLANEJADO)]);
   return Array.from(all).sort().filter(dt=>dt>=start&&dt<=end).map(date=>{
@@ -969,11 +1005,15 @@ function getTotals(daily){
 
 
 // ── Derived — Tráfego ──────────────────────────────────────────────────────
-function getDailyT(start,end){
+function getDailyT(start,end,temp=null){
   const d=D();
-  return Object.keys(d.meta).sort().filter(dt=>dt>=start&&dt<=end).map(date=>{
-    const m=d.meta[date];
-    const v=d.vendas[date]||{qtd:0};
+  const isTemp=temp&&temp!=="consolidado";
+  const tempData=isTemp?getMetaVendasByTemp(temp):null;
+  const metaSrc=isTemp?tempData.metaByDate:d.meta;
+  const vendasSrc=isTemp?tempData.vendasByDate:d.vendas;
+  return Object.keys(metaSrc).sort().filter(dt=>dt>=start&&dt<=end).map(date=>{
+    const m=metaSrc[date]||{spend:0,clicks:0,impressions:0,landingViews:0,checkouts:0};
+    const v=vendasSrc[date]||{qtd:0};
     const cpc   = m.clicks>0     ? m.spend/m.clicks          : 0;
     const ctr   = m.impressions>0 ? (m.clicks/m.impressions)*100 : 0;
     const cpm   = m.impressions>0 ? (m.spend/m.impressions)*1000 : 0;
@@ -1002,10 +1042,12 @@ function getTotalsT(daily){
 }
 
 // Totais de um dia específico
-function getDayMetrics(iso){
+function getDayMetrics(iso,temp=null){
   const d=D();
-  const m=d.meta[iso]||{spend:0,clicks:0,impressions:0,landingViews:0,checkouts:0};
-  const v=d.vendas[iso]||{qtd:0};
+  const isTemp=temp&&temp!=="consolidado";
+  const tempData=isTemp?getMetaVendasByTemp(temp):null;
+  const m=(isTemp?tempData.metaByDate[iso]:d.meta[iso])||{spend:0,clicks:0,impressions:0,landingViews:0,checkouts:0};
+  const v=(isTemp?tempData.vendasByDate[iso]:d.vendas[iso])||{qtd:0};
   return{
     spend:m.spend,
     cpc:   m.clicks>0       ? m.spend/m.clicks              : 0,
@@ -1476,11 +1518,19 @@ function drawDistBar(id, data, key, color, fmtFn, cssW, cssH){
   data.forEach((d,i)=>{if(i%step===0)ctx.fillText(d.label,P.l+slot*i+slot/2,P.t+cH+18);});
 }
 
-// ── Render Principal ───────────────────────────────────────────────────────
+// ── Filtro de temperatura (compartilhado entre Principal e Métricas de Tráfego) ────
 const TEMP_LABELS={consolidado:"Consolidado",frio:"Frio",morno:"Morno",quente:"Quente"};
-function setTempFilter(t){ S.currentTemp=t; renderPrincipal(); }
+function setTempFilter(t){ S.currentTemp=t; render(); }
 function togglePlanInv(){ S.showPlanInv=!S.showPlanInv; renderPrincipal(); }
+function tempBtn(id){
+  const active=S.currentTemp===id;
+  return `<button class="btn-pre${active?" on":""}" onclick="setTempFilter('${id}')">${TEMP_LABELS[id]}</button>`;
+}
+function tempSelectorHTML(){
+  return `<div class="presets" style="margin-bottom:16px">${["consolidado","frio","morno","quente"].map(tempBtn).join("")}</div>`;
+}
 
+// ── Render Principal ───────────────────────────────────────────────────────
 function renderPrincipal(){
   const el=document.getElementById("page-principal");if(!el)return;
   const isTemp=S.currentTemp!=="consolidado";
@@ -1498,10 +1548,6 @@ function renderPrincipal(){
   const pctMorno=spendAll>0?(spendMorno/spendAll)*100:0;
   const pctQuente=spendAll>0?(spendQuente/spendAll)*100:0;
 
-  function tempBtn(id){
-    const active=S.currentTemp===id;
-    return `<button class="btn-pre${active?" on":""}" onclick="setTempFilter('${id}')">${TEMP_LABELS[id]}</button>`;
-  }
   function planInvBtn(){
     const on=S.showPlanInv;
     return `<button class="btn-overlay${on?" on":""}"
@@ -1518,9 +1564,7 @@ function renderPrincipal(){
       <div style="display:flex;align-items:center;gap:16px">${statusLegend()}</div>
     </div>
     ${S.error?`<div class="err">⚠️ ${S.error}</div>`:""}
-    <div class="presets" style="margin-bottom:16px">
-      ${["consolidado","frio","morno","quente"].map(tempBtn).join("")}
-    </div>
+    ${tempSelectorHTML()}
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:13px">
       ${kpiCard("Investimento",fBRL(tot.spend),`${tot.vendas} vendas · ${daily.length} dias`,"var(--text-strong)")}
       ${kpiCard("ROAS",tot.roas.toFixed(2)+"x",`meta ${META_ROAS.toFixed(2)}x`,roasC,false,tot.roas,true)}
@@ -1583,16 +1627,17 @@ function renderPrincipal(){
 // ── Render Tráfego ─────────────────────────────────────────────────────────
 function renderTrafego(){
   const el=document.getElementById("page-trafego");if(!el)return;
+  const isTemp=S.currentTemp!=="consolidado";
   const today=todayISO();
-  const todayM=getDayMetrics(today);
+  const todayM=getDayMetrics(today,S.currentTemp);
 
   // Últimos 3 dias consolidados (D-3 a D-1)
   const p3Start=subDays(today,3);
   const p3End=subDays(today,1);
-  const p3Daily=getDailyT(p3Start,p3End);
+  const p3Daily=getDailyT(p3Start,p3End,S.currentTemp);
   const p3Tot=getTotalsT(p3Daily);
 
-  const daily=getDailyT(S.startDate,S.endDate);
+  const daily=getDailyT(S.startDate,S.endDate,S.currentTemp);
 
   // Definição das métricas: key, label, fmtFn, metaVal, higher, rawKey (para statusColor)
   const METRICS=[
@@ -1667,11 +1712,12 @@ function renderTrafego(){
     <div class="hdr" style="margin-bottom:6px">
       <div>
         <div class="hdr-title">Métricas de Tráfego</div>
-        <div class="hdr-sub">atualizado em: ${D().updated||"—"}</div>
+        <div class="hdr-sub">atualizado em: ${D().updated||"—"}${isTemp?` · temperatura: ${TEMP_LABELS[S.currentTemp]}`:""}</div>
       </div>
       <div>${statusLegend()}</div>
     </div>
     ${S.error?`<div class="err">⚠️ ${S.error}</div>`:""}
+    ${tempSelectorHTML()}
 
     <div class="section-lbl">Hoje — ${fDateBR(today)}</div>
     <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:16px">
@@ -1699,8 +1745,8 @@ function renderTrafego(){
           </thead>
           <tbody>
             ${(()=>{
-              const mp=S.metaByPlatform||{};
-              const vp=S.vendasByPlatform||{};
+              const mp=isTemp?((S.metaByPlatformByTemp||{})[S.currentTemp]||{}):(S.metaByPlatform||{});
+              const vp=isTemp?((S.vendasByPlatformByTemp||{})[S.currentTemp]||{}):(S.vendasByPlatform||{});
               const allPlatforms=[...new Set([...Object.keys(mp),...Object.keys(vp)])];
               const order=["instagram","facebook","audience_network","messenger","threads"];
               const sorted=[...order.filter(p=>allPlatforms.includes(p)),...allPlatforms.filter(p=>!order.includes(p))];
@@ -1737,9 +1783,9 @@ function renderTrafego(){
           </thead>
           <tbody>
             ${(()=>{
-              const vpl=S.vendasByPlacement||{};
-              const mp=S.metaByPlatform||{};
-              const vp=S.vendasByPlatform||{};
+              const vpl=isTemp?((S.vendasByPlacementByTemp||{})[S.currentTemp]||{}):(S.vendasByPlacement||{});
+              const mp=isTemp?((S.metaByPlatformByTemp||{})[S.currentTemp]||{}):(S.metaByPlatform||{});
+              const vp=isTemp?((S.vendasByPlatformByTemp||{})[S.currentTemp]||{}):(S.vendasByPlatform||{});
               const sorted=Object.entries(vpl).sort((a,b)=>b[1].qtd-a[1].qtd);
               const fmtLabel=pl=>{
                 const p=pl.toLowerCase();
