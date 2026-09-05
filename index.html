@@ -30,11 +30,14 @@ html,body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-seri
 .funil-status{font-size:9px;color:var(--green);letter-spacing:.04em}
 .funil-chevron{color:var(--muted);font-size:10px;margin-left:2px}
 .funil-menu{position:absolute;top:calc(100% + 6px);left:0;background:#1a2236;border:1px solid var(--border-h);border-radius:10px;padding:4px;min-width:180px;box-shadow:0 6px 30px rgba(2,6,20,.45);z-index:100}
-.funil-opt{padding:8px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;color:var(--muted);transition:all .12s;display:flex;align-items:center;gap:8px}
-.funil-opt:hover{background:var(--accent-bg);color:var(--text)}
-.funil-opt.fopt-active{background:var(--accent-bg);color:#cfe0ff}
-.fopt-dot{width:6px;height:6px;border-radius:50%;background:var(--muted)}
-.funil-opt.fopt-active .fopt-dot{background:var(--green)}
+.funil-opt{padding:8px 12px;border-radius:7px;cursor:pointer;transition:all .12s;display:flex;align-items:flex-start;gap:8px}
+.funil-opt:hover{background:var(--accent-bg)}
+.funil-opt.fopt-active{background:var(--accent-bg)}
+.fopt-dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex-shrink:0;margin-top:5px}
+.fopt-dot.st-ativo{background:var(--green)}
+.fopt-dot.st-finalizado{background:var(--accent)}
+.fopt-label{font-size:13px;font-weight:600;color:var(--text-strong)}
+.fopt-sub{font-size:10px;color:var(--muted);margin-top:1px}
 
 /* Nav tabs */
 .hdr-tabs{display:flex;align-items:center;gap:4px}
@@ -248,14 +251,20 @@ input[type=date]::-webkit-calendar-picker-indicator{opacity:.4;cursor:pointer;fi
     <button class="funil-btn" id="funil-btn" onclick="toggleFunilMenu(event)">
       <span class="funil-dot" id="funil-dot"></span>
       <div>
-        <div class="funil-name" id="funil-name">SVO - Libertas</div>
+        <div class="funil-name" id="funil-name">SVO - Set26</div>
         <div class="funil-status" id="funil-status">ativo</div>
       </div>
       <span class="funil-chevron">▾</span>
     </button>
     <div class="funil-menu" id="funil-menu" style="display:none">
-      <div class="funil-opt fopt-active" id="fopt-set26" onclick="selectEdicao('set26')"><span class="fopt-dot"></span>SVO - Set/26 (ao vivo)</div>
-      <div class="funil-opt" id="fopt-ago26" onclick="selectEdicao('ago26')"><span class="fopt-dot"></span>SVO - Ago/26 (debriefing)</div>
+      <div class="funil-opt fopt-active" id="fopt-set26" onclick="selectEdicao('set26')">
+        <span class="fopt-dot st-ativo"></span>
+        <div><div class="fopt-label">SVO - Set26</div><div class="fopt-sub">ativo</div></div>
+      </div>
+      <div class="funil-opt" id="fopt-ago26" onclick="selectEdicao('ago26')">
+        <span class="fopt-dot st-finalizado"></span>
+        <div><div class="fopt-label">SVO - Ago26</div><div class="fopt-sub">finalizado</div></div>
+      </div>
     </div>
   </div>
 
@@ -319,7 +328,7 @@ const SHEET_VENDAS = "Base Vendas";
 // Produto único do funil SVO — sem upsell/ascensão
 const PRODUTO_SVO = "Sua Vida Em Ordem";
 // Nome exibido no seletor de funil (canto superior esquerdo) — independente do nome do produto
-const FUNIL_LABEL = "SVO - Libertas";
+const FUNIL_LABEL = "SVO - Set26";
 const FUNIL_PRODUTOS = [
   {id:"reto", label:PRODUTO_SVO, step:"Produto único", match: n => true},
 ];
@@ -442,9 +451,9 @@ function selectEdicao(id){
   const hdrRight=document.getElementById("hdr-right");
   const frame=document.getElementById("ago26-frame");
   if(id==="ago26"){
-    if(fn) fn.textContent="SVO - Ago/26";
-    if(fs){ fs.textContent="encerrado"; fs.style.color="var(--hint)"; }
-    if(fd) fd.style.background="var(--hint)";
+    if(fn) fn.textContent="SVO - Ago26";
+    if(fs){ fs.textContent="finalizado"; fs.style.color="var(--accent)"; }
+    if(fd) fd.style.background="var(--accent)";
     if(appContent) appContent.style.display="none";
     if(hdrTabs) hdrTabs.style.display="none";
     if(hdrRight) hdrRight.style.display="none";
