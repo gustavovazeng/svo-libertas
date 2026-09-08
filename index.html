@@ -827,10 +827,11 @@ async function loadData(force=false){
         if(igUrl && !mByAd[advCode].igUrl) mByAd[advCode].igUrl=igUrl;
         if(!mByAd[advCode].adName&&adName) mByAd[advCode].adName=adName;
         if(!mByAdByDate[advCode]) mByAdByDate[advCode]={};
-        if(!mByAdByDate[advCode][d]) mByAdByDate[advCode][d]={spend:0,clicks:0,impressions:0,ic:0,video3s:0,video15s:0,adIds:new Set(),igUrl:""};
+        if(!mByAdByDate[advCode][d]) mByAdByDate[advCode][d]={spend:0,clicks:0,impressions:0,landingViews:0,ic:0,video3s:0,video15s:0,adIds:new Set(),igUrl:""};
         mByAdByDate[advCode][d].spend       += spendV;
         mByAdByDate[advCode][d].clicks      += clicksV;
         mByAdByDate[advCode][d].impressions += impressV;
+        mByAdByDate[advCode][d].landingViews+= landingViewsV;
         mByAdByDate[advCode][d].ic       += icV;
         mByAdByDate[advCode][d].video3s  += video3sV;
         mByAdByDate[advCode][d].video15s += video15sV;
@@ -2090,7 +2091,7 @@ function renderAnuncios(){
       if(useIds.size===0) continue;
 
       // Spend / clicks / impressions — calculado a partir dos adIds filtrados
-      let spend=0,clicks=0,impressions=0,ic=0,video3s=0,video15s=0,igUrl="";
+      let spend=0,clicks=0,impressions=0,landingViews=0,ic=0,video3s=0,video15s=0,igUrl="";
       if(allowedAdIds){
         // Usa metaByAdId para precisão por campanha
         for(const adId of useIds){
@@ -2098,6 +2099,7 @@ function renderAnuncios(){
           for(const [d,vals] of Object.entries(adData.byDate)){
             if(d>=start&&d<=end){
               spend+=vals.spend;clicks+=vals.clicks;impressions+=vals.impressions;
+              landingViews+=vals.landingViews||0;
               ic+=vals.ic||0;video3s+=vals.video3s||0;video15s+=vals.video15s||0;
               if(!igUrl&&vals.igUrl) igUrl=vals.igUrl;
             }
@@ -2108,6 +2110,7 @@ function renderAnuncios(){
         for(const [d,vals] of Object.entries(byDate)){
           if(d>=start&&d<=end){
             spend+=vals.spend;clicks+=vals.clicks;impressions+=vals.impressions;
+            landingViews+=vals.landingViews||0;
             ic+=vals.ic||0;video3s+=vals.video3s||0;video15s+=vals.video15s||0;
             if(!igUrl&&vals.igUrl) igUrl=vals.igUrl;
           }
@@ -2153,6 +2156,8 @@ function renderAnuncios(){
         ic, cpic:ic>0?spend/ic:0,
         hookRate:impressions>0?(video3s/impressions)*100:0,
         holdRate:video3s>0?(video15s/video3s)*100:0,
+        txPagChk:landingViews>0?(ic/landingViews)*100:0,
+        txChkVnd:ic>0?(qtd/ic)*100:0,
         isActive, hasStatusData});
     }
     return rows.filter(r=>r.spend>0);
@@ -2434,10 +2439,12 @@ function renderAnuncios(){
           ${thC("cpc","CPC","ad")}
           ${thC("hookRate","Hook Rate","ad")}
           ${thC("holdRate","Hold Rate","ad")}
+          ${thC("txPagChk","Conversão de página","ad")}
+          ${thC("txChkVnd","Conversão do checkout","ad")}
           <th style="padding:10px 12px;border-bottom:1px solid var(--border)"></th>
         </tr></thead>
         <tbody>
-          ${filteredAds.length===0?`<tr><td colspan="13" style="padding:24px;text-align:center;color:var(--hint);font-size:12px">Nenhum anúncio encontrado para as campanhas selecionadas</td></tr>`:""}
+          ${filteredAds.length===0?`<tr><td colspan="15" style="padding:24px;text-align:center;color:var(--hint);font-size:12px">Nenhum anúncio encontrado para as campanhas selecionadas</td></tr>`:""}
           ${filteredAds.map(r=>{
             const selAd=S.selectedAds.has(r.advCode);
             const bgAd=selAd?"rgba(16,185,129,.10)":"transparent";
@@ -2466,6 +2473,8 @@ function renderAnuncios(){
             <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:${sc(r.cpc,METAS_T.cpc.val,false)};font-weight:600">${fBRL(r.cpc)}</td>
             <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--text)">${r.hookRate>0?r.hookRate.toFixed(1)+"%":"—"}</td>
             <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--text)">${r.holdRate>0?r.holdRate.toFixed(1)+"%":"—"}</td>
+            <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:${r.txPagChk>0?sc(r.txPagChk,METAS_T.txPagChk.val,true):"var(--hint)"};font-weight:600">${r.txPagChk>0?fPct(r.txPagChk):"—"}</td>
+            <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono',monospace;color:${r.txChkVnd>0?sc(r.txChkVnd,METAS_T.txChkVnd.val,true):"var(--hint)"};font-weight:600">${r.txChkVnd>0?fPct(r.txChkVnd):"—"}</td>
             <td style="padding:8px 12px;text-align:center" onclick="event.stopPropagation()">
               ${r.igUrl?`<a href="${r.igUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:3px;background:var(--surf);border:1px solid var(--border-h);color:var(--muted);padding:4px 9px;border-radius:7px;font-size:10px;text-decoration:none;white-space:nowrap;font-weight:500">Ver ↗</a>`:"—"}
             </td>
