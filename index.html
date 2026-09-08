@@ -343,12 +343,12 @@ const TAXA_IMPOSTO=1.0;
 
 // Metas aba Tráfego
 const METAS_T = {
-  cpc:      {val:1.38,  higher:false},
-  ctr:      {val:2.10,  higher:true},
-  cpm:      {val:29.00, higher:false},
-  txPagChk: {val:8.0,   higher:true},
-  txChkVnd: {val:30.0,  higher:true},
-  connect:  {val:85,    higher:true},
+  cpc:      {val:4.25,  higher:false},
+  ctr:      {val:1.43,  higher:true},
+  cpm:      {val:60.83, higher:false},
+  txPagChk: {val:4.25,  higher:true},
+  txChkVnd: {val:77.69, higher:true},
+  connect:  {val:94.16, higher:true},
 };
 
 // Chart colors — dark mode
@@ -1743,12 +1743,12 @@ function renderTrafego(){
 
   // Gráficos em grade 2×3
   const CHART_CONFIGS=[
-    {key:"ctr",      lbl:"CTR",                    fmt:fPct, meta:METAS_T.ctr.val,        metaLbl:"Meta 2,5%"},
-    {key:"cpm",      lbl:"CPM",                    fmt:fBRL, meta:METAS_T.cpm.val,        metaLbl:"Meta $5,96"},
-    {key:"cpc",      lbl:"CPC",                    fmt:fBRL, meta:METAS_T.cpc.val,        metaLbl:"Meta $0,24"},
-    {key:"txPagChk", lbl:"Tx Pág → Checkout",      fmt:fPct, meta:METAS_T.txPagChk.val,  metaLbl:"Meta 5,3%"},
-    {key:"txChkVnd", lbl:"Tx Checkout → Venda",    fmt:fPct, meta:METAS_T.txChkVnd.val,  metaLbl:"Meta 18,3%"},
-    {key:"connect",  lbl:"Connect Rate",           fmt:fPct, meta:METAS_T.connect.val,    metaLbl:"Meta 70%"},
+    {key:"ctr",      lbl:"CTR",                    fmt:fPct, meta:METAS_T.ctr.val,        metaLbl:`Meta ${fPct(METAS_T.ctr.val)}`},
+    {key:"cpm",      lbl:"CPM",                    fmt:fBRL, meta:METAS_T.cpm.val,        metaLbl:`Meta ${fBRL(METAS_T.cpm.val)}`},
+    {key:"cpc",      lbl:"CPC",                    fmt:fBRL, meta:METAS_T.cpc.val,        metaLbl:`Meta ${fBRL(METAS_T.cpc.val)}`},
+    {key:"txPagChk", lbl:"Tx Pág → Checkout",      fmt:fPct, meta:METAS_T.txPagChk.val,  metaLbl:`Meta ${fPct(METAS_T.txPagChk.val)}`},
+    {key:"txChkVnd", lbl:"Tx Checkout → Venda",    fmt:fPct, meta:METAS_T.txChkVnd.val,  metaLbl:`Meta ${fPct(METAS_T.txChkVnd.val)}`},
+    {key:"connect",  lbl:"Connect Rate",           fmt:fPct, meta:METAS_T.connect.val,    metaLbl:`Meta ${fPct(METAS_T.connect.val)}`},
   ];
 
   function tChart(c){
