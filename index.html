@@ -670,8 +670,11 @@ function parseVendasRows(sheetJ){
     const valor=cents/100;
     const rawEmail=(r["event.invoice.payer.email"]||"").trim();
     const rawPhone=(r["event.invoice.payer.phone"]||"").replace(/\D/g,"");
-    // Canal: UTM com FBAds ou sem UTM → tráfego; qualquer outra UTM → orgânico
-    const _channel=(!utmSource.trim()||/^fbads/i.test(utmSource.trim()))?"trafego":"organico";
+    // Canal: identificado pela oferta (event.products[0].id) — a oferta de tráfego é a
+    // única com o ID abaixo; qualquer outra oferta é orgânico.
+    const OFERTA_TRAFEGO_ID="xCpvTP763gYSG5TdoI67";
+    const productId=r["event.products[0].id"]||"";
+    const _channel=(productId===OFERTA_TRAFEGO_ID)?"trafego":"organico";
     return {
       "Email":rawEmail.toLowerCase(),
       "CPF Comprador":"",
