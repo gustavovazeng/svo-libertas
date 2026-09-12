@@ -324,11 +324,14 @@ const SHEET_ID = "1N5TiaLxgyWPRti3pjGGe7nyUPR68cHX6dGujRiKxvFw";
 const GAPI_KEY  = "AIzaSyDFyD63YrWNWSX2gjZWdVD5Bq8uoazXzbE";
 const SHEET_META   = "Base Meta";
 const SHEET_VENDAS = "Base Vendas";
+const SHEET_VENDAS_MANUAL = "Base vendas - manual"; // vendas lançadas à mão (export Hubla) que não caíram no webhook
 
 // Produto único do funil SVO — sem upsell/ascensão
 const PRODUTO_SVO = "Sua Vida Em Ordem";
 // Nome exibido no seletor de funil (canto superior esquerdo) — independente do nome do produto
 const FUNIL_LABEL = "SVO - Set26";
+// Ofertas (event.products[0].id) que contam como tráfego — qualquer outra oferta é orgânico
+const OFERTAS_TRAFEGO = new Set(["xCpvTP763gYSG5TdoI67", "vd3PZgriFmFNrAGWuv9R"]);
 const FUNIL_PRODUTOS = [
   {id:"reto", label:PRODUTO_SVO, step:"Produto único", match: n => true},
 ];
@@ -670,11 +673,10 @@ function parseVendasRows(sheetJ){
     const valor=cents/100;
     const rawEmail=(r["event.invoice.payer.email"]||"").trim();
     const rawPhone=(r["event.invoice.payer.phone"]||"").replace(/\D/g,"");
-    // Canal: identificado pela oferta (event.products[0].id) — a oferta de tráfego é a
-    // única com o ID abaixo; qualquer outra oferta é orgânico.
-    const OFERTA_TRAFEGO_ID="xCpvTP763gYSG5TdoI67";
+    // Canal: identificado pela oferta (event.products[0].id) — as ofertas em OFERTAS_TRAFEGO
+    // contam como tráfego; qualquer outra oferta é orgânico.
     const productId=r["event.products[0].id"]||"";
-    const _channel=(productId===OFERTA_TRAFEGO_ID)?"trafego":"organico";
+    const _channel=OFERTAS_TRAFEGO.has(productId)?"trafego":"organico";
     return {
       "Email":rawEmail.toLowerCase(),
       "CPF Comprador":"",
@@ -705,6 +707,46 @@ function parseVendasRows(sheetJ){
       }
       return acc;
     },[]);
+}
+
+// Parser da aba "Base vendas - manual" — vendas lançadas à mão a partir do export do
+// Hubla (formato totalmente diferente do webhook: colunas em português, "Data de
+// pagamento" já em horário de Brasília — não precisa subtrair 3h). Devolve o mesmo
+// formato de linha que parseVendasRows(), para poder ser concatenado com ele.
+function parseVendasManualRows(sheetJ){
+  return parseSheet(sheetJ).map(r=>{
+    const dtRaw=(r["Data de pagamento"]||"").trim();
+    const dm=dtRaw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    const d=dm?`${dm[3]}-${dm[2]}-${dm[1]}`:"";
+    const st=normalizeVendaStatus(r["Status da fatura"]||"");
+    const productId=r["ID do produto"]||"";
+    const content=r["UTM Conteúdo"]||"";
+    const adId=extractAdId(content)||"";
+    const utmSource=r["UTM Origem"]||"";
+    const {platform:_plat,placement:_plac}=extractPlatformPlacement(utmSource);
+    const valor=parseFloat(String(r["Valor do produto"]||"0").replace(",","."))||0;
+    const rawEmail=(r["Email do cliente"]||"").trim();
+    const rawPhone=(r["Telefone do cliente"]||"").replace(/\D/g,"");
+    const rawCpf=(r["Documento do cliente"]||"").replace(/\D/g,"");
+    const _channel=OFERTAS_TRAFEGO.has(productId)?"trafego":"organico";
+    return {
+      "Email":rawEmail.toLowerCase(),
+      "CPF Comprador":rawCpf,
+      "Telefone":rawPhone,
+      "Nome":r["Nome do cliente"]||"",
+      "Status da compra":st,
+      "Data da compra":d||"",
+      "Nome do produto":PRODUTO_SVO,
+      "Valor do produto":valor.toFixed(2),
+      "Taxa da plataforma":"0",
+      "Ad Id":adId,
+      _src:"svo_manual",
+      _channel,
+      platform:_plat,
+      placement:_plac,
+      _orderDate:r["ID da fatura"]||d,
+    };
+  }).filter(r=>r["Data da compra"]);
 }
 
 // ── Load data ──────────────────────────────────────────────────────────────
@@ -770,7 +812,7 @@ async function loadData(force=false){
   S.loading=true; S.error=null; render();
 
   // Tenta buscar do Google Sheets; fallback para dados embutidos
-  let mj, vendasJ;
+  let mj, vendasJ, manualJ;
   try{
     [mj, vendasJ] = await Promise.all([
       fetchSheetPaged(SHEET_META,"U",5000),
@@ -780,6 +822,15 @@ async function loadData(force=false){
   }catch(fetchErr){
     console.warn("[sheets] Falha ao buscar do Sheets, usando dados embutidos:",fetchErr.message);
     mj=_DATA_META; vendasJ=_DATA_VENDAS;
+  }
+  // Aba "Base vendas - manual" — busca à parte: se falhar (aba renomeada, etc.) não derruba
+  // o resto do dashboard, só entra com zero vendas manuais.
+  try{
+    manualJ=await fetchSheetPaged(SHEET_VENDAS_MANUAL,"BM",5000);
+    console.log("[sheets] Vendas manual:",manualJ.values.length-1,"linhas");
+  }catch(manualErr){
+    console.warn("[sheets] Falha ao buscar 'Base vendas - manual', seguindo sem vendas manuais:",manualErr.message);
+    manualJ={values:[]};
   }
   S.loading=false; S.error=null;
   S.loading=false; S.error=null;
@@ -908,9 +959,11 @@ async function loadData(force=false){
     S.metaByPlatformByTemp=mByPlatformByTemp;
 
     // ── Vendas SVO ───────────────────────────────────────────────────────
-    // Canal: UTM com FBAds (ou sem UTM) = tráfego; qualquer outra UTM = orgânico.
+    // Canal: definido pela oferta (OFERTAS_TRAFEGO) — ver parseVendasRows/parseVendasManualRows.
     // Toda a dashboard (exceto a aba "Métricas do funil") usa só vendas de tráfego.
-    const retoRows=parseVendasRows(vendasJ);
+    // Junta o webhook automático (Base Vendas) com os lançamentos manuais (Base vendas - manual,
+    // vendas que por algum motivo não caíram no webhook).
+    const retoRows=[...parseVendasRows(vendasJ), ...parseVendasManualRows(manualJ)];
     const trafegoRows=retoRows.filter(r=>r._channel==="trafego");
     const organicoRows=retoRows.filter(r=>r._channel==="organico");
 
