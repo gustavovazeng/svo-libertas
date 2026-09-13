@@ -1108,7 +1108,10 @@ function getDaily(start,end,temp=null){
     return{date,label:fDate(date),spend,faturamento:v.valor,vendas:v.qtd,
       spendPlanejado: date in INVESTIMENTO_PLANEJADO ? INVESTIMENTO_PLANEJADO[date] : null,
       vendasOrganico:vo.qtd,faturamentoOrganico:vo.valor,
-      vendasPlanejadas: date in VENDAS_PLANEJADAS ? VENDAS_PLANEJADAS[date] : null,
+      // Vendas planejadas: usa valor explícito se houver; senão deriva do investimento
+      // planejado (tráfego) ÷ meta de Custo por Venda de tráfego (META_CPV).
+      vendasPlanejadas: date in VENDAS_PLANEJADAS ? VENDAS_PLANEJADAS[date]
+        : (date in INVESTIMENTO_PLANEJADO ? Math.round(INVESTIMENTO_PLANEJADO[date]/META_CPV) : null),
       roas:spend>0?v.valor/spend:0,cpv:v.qtd>0?spend/v.qtd:0,
       ticket:v.qtd>0?v.valor/v.qtd:0,lucro};
   });
